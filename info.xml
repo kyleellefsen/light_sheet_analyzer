@@ -1,0 +1,20 @@
+<plugin name="Light Sheet Analyzer">
+	<author>
+		Kyle Ellefsen
+	</author>
+	<base_dir>
+		light_sheet_analyzer
+	</base_dir>
+	<date>
+		02/10/2016
+	</date>
+	<url>
+		http://github.com/kyleellefsen/light_sheet_analyzer/archive/master.zip
+	</url>
+	<description>
+		Creates 4D images from a tiff stack.
+	</description>
+	<menu_layout>
+		<action location="light_sheet_analyzer" function="light_sheet_analyzer.gui">Light Sheet Analyzer Dialog</action>
+	</menu_layout>
+</plugin>
