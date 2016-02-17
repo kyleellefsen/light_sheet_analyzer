@@ -17,7 +17,10 @@ from process.BaseProcess import BaseProcess
 import pyqtgraph as pg
 from window import Window
 
-from spimagine import volshow
+from skimage.transform import resize
+
+
+#from spimagine import volshow
 
 
 
@@ -36,23 +39,28 @@ class Light_Sheet_Analyzer(BaseProcess):
         A=A[:mv*nSteps]
         B=np.reshape(A,(mv,nSteps,mx,my))
         
-        B=B.swapaxes(1,2)
+        B=B.swapaxes(1,3)
         
         mv,mz,mx,my=B.shape
-        newx=mx+shift_factor*mz
-        C=np.zeros((mv,mz,newx,my))
+        newy=my+shift_factor*mz
+        C=np.zeros((mv,mz,mx,newy),dtype=np.uint16)
         shifted=0
         for z in np.arange(mz):
-            shifted=z*shift_factor
-            C[:,z,shifted:shifted+mx,:]=B[:,z,:,:]
-        
+            minus_z=mz-z
+            shifted=minus_z*shift_factor
+            C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
+            
+        # shift aspect ratio
+        D=resize(C,(mt,mx,newy*shift_factor))
         
         
         
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
         
-        volshow(C)     
-        return Window(np.squeeze(C[0,:,:,:]))
+        #volshow(C)     
+        w = Window(np.squeeze(D[0,:,:,:]))
+        w.volume=C
+        return 
 
 
     def closeEvent(self, event):
