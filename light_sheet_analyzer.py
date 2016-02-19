@@ -13,7 +13,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from time import time
 import global_vars as g
-from process.BaseProcess import BaseProcess
+from process.BaseProcess import BaseProcess, SliderLabel
 import pyqtgraph as pg
 from window import Window
 
@@ -34,6 +34,12 @@ class Light_Sheet_Analyzer(BaseProcess):
         t = time()
         self.start(keepSourceWindow)
         A=self.tif
+        '''
+        A=g.m.currentWindow.image
+        nSteps=250
+        shift_factor=1
+        
+        '''
         mt,mx,my=A.shape
         mv=int(np.floor(mt/nSteps)) #number of volumes
         A=A[:mv*nSteps]
@@ -43,7 +49,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         mv,mz,mx,my=B.shape
         newy=my+shift_factor*mz
-        C=np.zeros((mv,mz,mx,newy),dtype=np.uint16)
+        C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
         shifted=0
         for z in np.arange(mz):
             minus_z=mz-z
@@ -51,15 +57,14 @@ class Light_Sheet_Analyzer(BaseProcess):
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
             
         # shift aspect ratio
-        D=resize(C,(mt,mx,newy*shift_factor))
-        
-        
-        
+        #D=resize(C,(mt,mx,newy*shift_factor))
+
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
         
         #volshow(C)     
-        w = Window(np.squeeze(D[0,:,:,:]))
+        w = Window(np.squeeze(C[:,0,:,:]))
         w.volume=C
+        Volume_Viewer(w)
         return 
 
 
@@ -81,8 +86,44 @@ class Light_Sheet_Analyzer(BaseProcess):
 light_sheet_analyzer = Light_Sheet_Analyzer()
 
 
+class Volume_Viewer(QWidget):
+    closeSignal=Signal()
+    def __init__(self,window=None,parent=None):
+        super(Volume_Viewer,self).__init__(parent) ## Create window with ImageView widget
+        g.m.volume_viewer=self
+        self.window=window
+        self.setWindowTitle('Light Sheet Volume View Controller')
+        self.setWindowIcon(QIcon('images/favicon.png'))
+        self.setGeometry(QRect(422, 35, 222, 86))
+        self.l = QVBoxLayout()
+        
+        mv,mz,mx,my=window.volume.shape   
+
+        self.zSlider=SliderLabel(0)
+        self.zSlider.setRange(0,mz)
+        self.zSlider.label.valueChanged.connect(self.zSlider_updated)
+        self.zSlider.slider.mouseReleaseEvent=self.zSlider_release_event
+        self.l.addWidget(self.zSlider)
+        self.setLayout(self.l)
+        self.show()
+
+    def closeEvent(self, event):
+        event.accept() # let the window close
+        
+    def zSlider_updated(self,val):
+        currentIndex=self.window.currentIndex
+        vol=self.window.volume
+        testimage=np.squeeze(vol[currentIndex,val,:,:])
+        self.window.imageview.setImage(testimage,autoLevels=False)    
+        
+    def zSlider_release_event(self,ev):
+        z=self.zSlider.value()
+        vol=self.window.volume
+        image=np.squeeze(vol[:,z,:,:])
+        self.window.imageview.setImage(image)
+        QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
+
+#v=Volume_Viewer(g.m.currentWindow)
 
 
-
-
-
+    
