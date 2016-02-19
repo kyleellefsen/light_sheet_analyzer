@@ -55,15 +55,22 @@ class Light_Sheet_Analyzer(BaseProcess):
             minus_z=mz-z
             shifted=minus_z*shift_factor
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
-            
+        del B
         # shift aspect ratio
-        #D=resize(C,(mt,mx,newy*shift_factor))
-
+        D=[]
+        for v in np.arange(mv):
+            D_vol=[]
+            g.m.statusBar().showMessage("resizing volume {}/{}".format(v,mv))
+            for z in np.arange(mz):
+                resized_frame=resize(C[v,z,:,:].astype(np.float64),(mx,newy*shift_factor),order=0)
+                D_vol.append(resized_frame.astype(A.dtype))
+            D.append(np.array(D_vol,dtype=A.dtype))
+        D=np.array(D,dtype=A.dtype)
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
         
         #volshow(C)     
-        w = Window(np.squeeze(C[:,0,:,:]))
-        w.volume=C
+        w = Window(np.squeeze(D[:,0,:,:]))
+        w.volume=D
         Volume_Viewer(w)
         return 
 
