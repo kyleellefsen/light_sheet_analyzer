@@ -62,6 +62,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
         w = Window(np.squeeze(C[:,0,:,:]))
         w.volume=C
+
         Volume_Viewer(w)
         return 
 
