@@ -13,7 +13,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from time import time
 import global_vars as g
-from process.BaseProcess import BaseProcess, SliderLabel
+from process.BaseProcess import BaseProcess, SliderLabel, CheckBox
 import pyqtgraph as pg
 from window import Window
 
@@ -55,13 +55,11 @@ class Light_Sheet_Analyzer(BaseProcess):
             minus_z=mz-z
             shifted=minus_z*shift_factor
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
-            
+        C=C[:,::-1,:,:]
         # shift aspect ratio
-        #D=resize(C,(mt,mx,newy*shift_factor))
+        #C=resize(C,(mt,mx,newy*shift_factor))   #This doesn't look like it works, it runs into memory problems
 
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
-        
-        #volshow(C)     
         w = Window(np.squeeze(C[:,0,:,:]))
         w.volume=C
         Volume_Viewer(w)
@@ -78,6 +76,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         self.nSteps.setMinimum(1)
         
         self.shift_factor = pg.SpinBox(int=False, step=.1)
+        self.shift_factor.setValue(1)
         
         self.items.append({'name': 'nSteps', 'string': 'Number of steps per volume', 'object': self.nSteps})
         self.items.append({'name': 'shift_factor', 'string': 'Shift Factor', 'object': self.shift_factor})
@@ -95,33 +94,111 @@ class Volume_Viewer(QWidget):
         self.setWindowTitle('Light Sheet Volume View Controller')
         self.setWindowIcon(QIcon('images/favicon.png'))
         self.setGeometry(QRect(422, 35, 222, 86))
-        self.l = QVBoxLayout()
+        self.layout = QVBoxLayout()
+        mv,mz,mx,my=window.volume.shape
+        self.currentAxisOrder=[0,1,2,3]
+        self.current_v_Index=0
+        self.current_z_Index=0
+        self.current_x_Index=0
+        self.current_y_Index=0
         
-        mv,mz,mx,my=window.volume.shape   
-
+        self.formlayout=QFormLayout()
+        self.formlayout.setLabelAlignment(Qt.AlignRight)
+        
+        
         self.zSlider=SliderLabel(0)
-        self.zSlider.setRange(0,mz)
+        self.zSlider.setRange(0,mz-1)
         self.zSlider.label.valueChanged.connect(self.zSlider_updated)
         self.zSlider.slider.mouseReleaseEvent=self.zSlider_release_event
-        self.l.addWidget(self.zSlider)
-        self.setLayout(self.l)
+        
+        self.sideViewOn=CheckBox()
+        self.sideViewOn.setChecked(False)
+        self.sideViewOn.stateChanged.connect(self.sideViewOnClicked)
+        
+        self.sideViewSide = QComboBox(self)
+        self.sideViewSide.addItem("X")
+        self.sideViewSide.addItem("Y")
+        
+        self.MaxProjButton = QPushButton('Max Intenstiy Projection')
+        self.MaxProjButton.pressed.connect(self.make_maxintensity)
+        
+        self.xzy_position_label=QLabel('Z position')
+        self.formlayout.addRow(self.xzy_position_label,self.zSlider)
+        self.formlayout.addRow('Side View On',self.sideViewOn)
+        self.formlayout.addRow('Side View Side',self.sideViewSide)
+        self.formlayout.addRow('', self.MaxProjButton)
+        
+        self.layout.addWidget(self.zSlider)
+        self.layout.addLayout(self.formlayout)
+        self.setLayout(self.layout)
+        self.setGeometry(QRect(381, 43, 416, 110))
         self.show()
 
     def closeEvent(self, event):
         event.accept() # let the window close
         
-    def zSlider_updated(self,val):
-        currentIndex=self.window.currentIndex
+    def zSlider_updated(self,z_val):
+        self.current_v_Index=self.window.currentIndex
         vol=self.window.volume
-        testimage=np.squeeze(vol[currentIndex,val,:,:])
-        self.window.imageview.setImage(testimage,autoLevels=False)    
+        testimage=np.squeeze(vol[self.current_v_Index,z_val,:,:])
+        self.window.imageview.setImage(testimage,autoLevels=False)   
         
     def zSlider_release_event(self,ev):
-        z=self.zSlider.value()
         vol=self.window.volume
-        image=np.squeeze(vol[:,z,:,:])
-        self.window.imageview.setImage(image)
+        if self.currentAxisOrder[1]==1: # 'z'
+            self.current_z_Index=self.zSlider.value()
+            image=np.squeeze(vol[:,self.current_z_Index,:,:])
+        elif self.currentAxisOrder[1]==2: # 'x'
+            self.current_x_Index=self.zSlider.value()
+            image=np.squeeze(vol[:,self.current_x_Index,:,:])
+        elif self.currentAxisOrder[1]==3: # 'y'
+            self.current_y_Index=self.zSlider.value()
+            image=np.squeeze(vol[:,self.current_y_Index,:,:])
+            
+        self.window.imageview.setImage(image,autoLevels=False)
+        self.window.imageview.setCurrentIndex(self.current_v_Index)
         QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
+    
+    def sideViewOnClicked(self, checked):
+        self.current_v_Index=self.window.currentIndex
+        vol=self.window.volume
+        if checked==2: #checked=True
+            assert self.currentAxisOrder==[0,1,2,3]
+            side = self.sideViewSide.currentText()
+            if side=='X':
+                vol=vol.swapaxes(1,2)
+                self.currentAxisOrder=[0,2,1,3]
+            elif side=='Y':
+                vol=vol.swapaxes(1,3)
+                self.currentAxisOrder=[0,3,2,1]
+        else: #checked=False
+            if self.currentAxisOrder == [0,3,2,1]:
+                vol=vol.swapaxes(1,3)
+                self.currentAxisOrder=[0,1,2,3]
+            elif self.currentAxisOrder == [0,2,1,3]:
+                vol=vol.swapaxes(1,2)
+                self.currentAxisOrder=[0,1,2,3]
+                
+                
+        if self.currentAxisOrder[1]==1: # 'z'
+            idx=self.current_z_Index
+            self.xzy_position_label.setText('Z position')
+        elif self.currentAxisOrder[1]==2: # 'x'
+            idx=self.current_x_Index
+            self.xzy_position_label.setText('X position')
+        elif self.currentAxisOrder[1]==3: # 'y'
+            idx=self.current_y_Index
+            self.xzy_position_label.setText('Y position')
+            
+        image=np.squeeze(vol[:,idx,:,:])
+        self.window.imageview.setImage(image,autoLevels=False)
+        self.window.volume=vol
+        self.window.imageview.setCurrentIndex(self.current_v_Index)
+        self.zSlider.setValue(idx)
+    def make_maxintensity(self):
+        vol=self.window.volume
+        new_vol=np.max(vol,1)
+        Window(new_vol)
 
 #v=Volume_Viewer(g.m.currentWindow)
 
