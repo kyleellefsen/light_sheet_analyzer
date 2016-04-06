@@ -96,6 +96,7 @@ class Volume_Viewer(QWidget):
         self.setWindowIcon(QIcon('images/favicon.png'))
         self.setGeometry(QRect(422, 35, 222, 86))
         self.layout = QVBoxLayout()
+        self.vol_shape=window.volume.shape
         mv,mz,mx,my=window.volume.shape
         self.currentAxisOrder=[0,1,2,3]
         self.current_v_Index=0
@@ -184,12 +185,15 @@ class Volume_Viewer(QWidget):
         if self.currentAxisOrder[1]==1: # 'z'
             idx=self.current_z_Index
             self.xzy_position_label.setText('Z position')
+            self.zSlider.setRange(0,self.vol_shape[1]-1)
         elif self.currentAxisOrder[1]==2: # 'x'
             idx=self.current_x_Index
             self.xzy_position_label.setText('X position')
+            self.zSlider.setRange(0,self.vol_shape[2]-1)
         elif self.currentAxisOrder[1]==3: # 'y'
             idx=self.current_y_Index
             self.xzy_position_label.setText('Y position')
+            self.zSlider.setRange(0,self.vol_shape[3]-1)
             
         image=np.squeeze(vol[:,idx,:,:])
         self.window.imageview.setImage(image,autoLevels=False)
