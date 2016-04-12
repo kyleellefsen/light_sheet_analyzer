@@ -8,6 +8,7 @@ Created on Thu Feb 11 15:04:31 2016
 from __future__ import (absolute_import, division,print_function, unicode_literals)
 from future.builtins import (bytes, dict, int, list, object, range, str, ascii, chr, hex, input, next, oct, open, pow, round, super, filter, map, zip)
 
+import os
 import numpy as np
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
@@ -16,9 +17,8 @@ import global_vars as g
 from process.BaseProcess import BaseProcess, SliderLabel, CheckBox
 import pyqtgraph as pg
 from window import Window
-
 from skimage.transform import resize
-
+import tifffile
 
 #from spimagine import volshow
 
@@ -46,7 +46,9 @@ class Light_Sheet_Analyzer(BaseProcess):
         B=np.reshape(A,(mv,nSteps,mx,my))
         
         B=B.swapaxes(1,3)
-        
+        B=np.repeat(B,shift_factor,axis=3)
+
+        shift_factor=1
         mv,mz,mx,my=B.shape
         newy=my+shift_factor*mz
         C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
@@ -107,7 +109,7 @@ class Volume_Viewer(QWidget):
         self.formlayout=QFormLayout()
         self.formlayout.setLabelAlignment(Qt.AlignRight)
         
-        
+        self.xzy_position_label=QLabel('Z position')
         self.zSlider=SliderLabel(0)
         self.zSlider.setRange(0,mz-1)
         self.zSlider.label.valueChanged.connect(self.zSlider_updated)
@@ -124,11 +126,14 @@ class Volume_Viewer(QWidget):
         self.MaxProjButton = QPushButton('Max Intenstiy Projection')
         self.MaxProjButton.pressed.connect(self.make_maxintensity)
         
-        self.xzy_position_label=QLabel('Z position')
+        self.exportVolButton = QPushButton('Export Volume')
+        self.exportVolButton.pressed.connect(self.export_volume)
+        
         self.formlayout.addRow(self.xzy_position_label,self.zSlider)
         self.formlayout.addRow('Side View On',self.sideViewOn)
         self.formlayout.addRow('Side View Side',self.sideViewSide)
         self.formlayout.addRow('', self.MaxProjButton)
+        self.formlayout.addRow('', self.exportVolButton)
         
         self.layout.addWidget(self.zSlider)
         self.layout.addLayout(self.formlayout)
@@ -170,6 +175,11 @@ class Volume_Viewer(QWidget):
             if side=='X':
                 vol=vol.swapaxes(1,2)
                 self.currentAxisOrder=[0,2,1,3]
+                
+                vol=vol.swapaxes(2,3)
+                self.currentAxisOrder=[0,2,3,1]
+                
+                
             elif side=='Y':
                 vol=vol.swapaxes(1,3)
                 self.currentAxisOrder=[0,3,2,1]
@@ -177,7 +187,8 @@ class Volume_Viewer(QWidget):
             if self.currentAxisOrder == [0,3,2,1]:
                 vol=vol.swapaxes(1,3)
                 self.currentAxisOrder=[0,1,2,3]
-            elif self.currentAxisOrder == [0,2,1,3]:
+            elif self.currentAxisOrder == [0,2,3,1]:
+                vol=vol.swapaxes(2,3)
                 vol=vol.swapaxes(1,2)
                 self.currentAxisOrder=[0,1,2,3]
                 
@@ -203,7 +214,30 @@ class Volume_Viewer(QWidget):
     def make_maxintensity(self):
         vol=self.window.volume
         new_vol=np.max(vol,1)
-        Window(new_vol)
+        if self.currentAxisOrder[1]==1: # 'z'
+            name='Max Z projection'
+        elif self.currentAxisOrder[1]==2: # 'x'
+            name = 'Max X projection'
+        elif self.currentAxisOrder[1]==3: # 'y'
+            name = 'Max Y projection'
+        Window(new_vol, name=name)
+        
+    def export_volume(self):
+        vol=self.window.volume
+        export_path='C:/Users/Admin/Desktop/light_sheet_vols'
+        i=0
+        while os.path.isdir(export_path+str(i)):
+            i+=1
+        export_path=export_path+str(i)
+        os.mkdir(export_path) 
+        for v in np.arange(len(vol)):
+            A=vol[v]
+            filename=os.path.join(export_path,str(v)+'.tiff')
+            if len(A.shape)==3:
+                A=np.transpose(A,(0,2,1)) # This keeps the x and the y the same as in FIJI
+            elif len(A.shape)==2:
+                A=np.transpose(A,(1,0))
+            tifffile.imsave(filename, A)
 
 #v=Volume_Viewer(g.m.currentWindow)
 
