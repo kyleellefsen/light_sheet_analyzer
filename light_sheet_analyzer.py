@@ -27,13 +27,22 @@ import tifffile
 
 class Light_Sheet_Analyzer(BaseProcess):
     def __init__(self):
+        if g.settings['light_sheet_analyzer'] is None:
+            s = dict()
+            s['nSteps']=1
+            s['shift_factor']=1
+            g.settings['light_sheet_analyzer']=s
         super().__init__()
 
+
     def __call__(self, nSteps, shift_factor, keepSourceWindow=False):
+        g.settings['light_sheet_analyzer']['nSteps']=nSteps
+        g.settings['light_sheet_analyzer']['shift_factor']=shift_factor
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
         A=self.tif
+        A=A[1:] # Ian Parker said to hard code removal of the first frame.
         '''
         A=g.m.currentWindow.image
         nSteps=250
@@ -47,15 +56,14 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         B=B.swapaxes(1,3)
         B=np.repeat(B,shift_factor,axis=3)
-
-        shift_factor=1
+        
         mv,mz,mx,my=B.shape
-        newy=my+shift_factor*mz
+        newy=my+mz
         C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
         shifted=0
         for z in np.arange(mz):
             minus_z=mz-z
-            shifted=minus_z*shift_factor
+            shifted=minus_z
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
         C=C[:,::-1,:,:]
         # shift aspect ratio
@@ -74,12 +82,15 @@ class Light_Sheet_Analyzer(BaseProcess):
         event.accept()
 
     def gui(self):
+        s=g.settings['light_sheet_analyzer']
         self.gui_reset()
         self.nSteps = pg.SpinBox(int=True, step=1)
         self.nSteps.setMinimum(1)
+        self.nSteps.setValue(s['nSteps'])
         
         self.shift_factor = pg.SpinBox(int=False, step=.1)
-        self.shift_factor.setValue(1)
+        self.shift_factor.setValue(s['shift_factor'])
+        self.shift_factor
         
         self.items.append({'name': 'nSteps', 'string': 'Number of steps per volume', 'object': self.nSteps})
         self.items.append({'name': 'shift_factor', 'string': 'Shift Factor', 'object': self.shift_factor})
