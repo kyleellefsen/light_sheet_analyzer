@@ -5,9 +5,6 @@ Created on Thu Feb 11 15:04:31 2016
 @author: kyle
 """
 
-from __future__ import (absolute_import, division,print_function, unicode_literals)
-from future.builtins import (bytes, dict, int, list, object, range, str, ascii, chr, hex, input, next, oct, open, pow, round, super, filter, map, zip)
-
 import os
 import numpy as np
 from PyQt4.QtCore import *
@@ -41,18 +38,18 @@ class Light_Sheet_Analyzer(BaseProcess):
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
-        A=self.tif
-        A=A[1:] # Ian Parker said to hard code removal of the first frame.
+        A = self.tif
+        # A = A[1:]  # Ian Parker said to hard code removal of the first frame.
         '''
         A=g.m.currentWindow.image
         nSteps=250
         shift_factor=1
         
         '''
-        mt,mx,my=A.shape
-        mv=int(np.floor(mt/nSteps)) #number of volumes
-        A=A[:mv*nSteps]
-        B=np.reshape(A,(mv,nSteps,mx,my))
+        mt, mx, my = A.shape
+        mv = int(np.floor(mt/nSteps)) #number of volumes
+        A = A[:mv*nSteps]
+        B = np.reshape(A,(mv,nSteps,mx,my))
         
         B=B.swapaxes(1,3)
         B=np.repeat(B,shift_factor,axis=3)
@@ -62,6 +59,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
         shifted=0
         for z in np.arange(mz):
+            print(z)
             minus_z=mz-z
             shifted=minus_z
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
