@@ -59,7 +59,6 @@ class Light_Sheet_Analyzer(BaseProcess):
         C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
         shifted=0
         for z in np.arange(mz):
-            print(z)
             minus_z=mz-z
             shifted=minus_z
             C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
@@ -68,7 +67,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         #C=resize(C,(mt,mx,newy*shift_factor))   #This doesn't look like it works, it runs into memory problems
 
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
-        w = Window(np.squeeze(C[:,0,:,:]))
+        w = Window(np.squeeze(C[:,0,:,:]), name=self.oldname)
         w.volume=C
 
         Volume_Viewer(w)
@@ -102,6 +101,8 @@ class Volume_Viewer(QWidget):
     def __init__(self,window=None,parent=None):
         super(Volume_Viewer,self).__init__(parent) ## Create window with ImageView widget
         g.m.volume_viewer=self
+        window.lostFocusSignal.connect(self.hide)
+        window.gainedFocusSignal.connect(self.show)
         self.window=window
         self.setWindowTitle('Light Sheet Volume View Controller')
         self.setWindowIcon(QIcon('images/favicon.png'))
