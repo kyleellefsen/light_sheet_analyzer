@@ -158,7 +158,8 @@ class Volume_Viewer(QWidget):
         self.current_v_Index=self.window.currentIndex
         vol=self.window.volume
         testimage=np.squeeze(vol[self.current_v_Index,z_val,:,:])
-        self.window.imageview.setImage(testimage,autoLevels=False)   
+        self.window.imageview.setImage(testimage,autoLevels=False)
+        self.window.image = testimage
         
     def zSlider_release_event(self,ev):
         vol=self.window.volume
@@ -173,6 +174,7 @@ class Volume_Viewer(QWidget):
             image=np.squeeze(vol[:,self.current_y_Index,:,:])
             
         self.window.imageview.setImage(image,autoLevels=False)
+        self.window.image = image
         self.window.imageview.setCurrentIndex(self.current_v_Index)
         QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
     
