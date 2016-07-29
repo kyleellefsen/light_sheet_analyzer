@@ -14,7 +14,8 @@ import global_vars as g
 from process.BaseProcess import BaseProcess, SliderLabel, CheckBox
 import pyqtgraph as pg
 from window import Window
-from skimage.transform import resize
+#from skimage.transform import resize
+from scipy.ndimage.interpolation import zoom
 import tifffile
 
 #from spimagine import volshow
@@ -47,28 +48,33 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         '''
         mt, mx, my = A.shape
-        mv = int(np.floor(mt/nSteps)) #number of volumes
-        A = A[:mv*nSteps]
-        B = np.reshape(A,(mv,nSteps,mx,my))
-        
-        B=B.swapaxes(1,3)
-        B=np.repeat(B,shift_factor,axis=3)
-        
-        mv,mz,mx,my=B.shape
-        newy=my+mz
-        C=np.zeros((mv,mz,mx,newy),dtype=A.dtype)
-        shifted=0
+        mv = int(np.floor(mt / nSteps))  # number of volumes
+        A = A[:mv * nSteps]
+        B = np.reshape(A, (mv, nSteps, mx, my))
+        B = B.swapaxes(1, 3)  # the direction we step is going to be the new y axis, whereas the old y axis will eventually become the z axis
+        B = np.repeat(B, shift_factor, axis=3)  # We need to stretch the y axis pixels (which were the step size) so that one new y pixel is the same as a pixel in the x direction. Hopefully before this transformation, the step size (ums) is an integer multiple of the x pixel size (um).
+        # Now our matrix is in terms of (mv, mz, mx, my).
+        mv, mz, mx, my = B.shape
+
+        mz_new, _ = zoom(B[0, :, 0, :], (1 / np.sqrt(2), 1)).shape
+        C = np.zeros((mv, mz_new, mx, my), dtype=B.dtype)
+        for v in np.arange(mv):
+            for x in np.arange(mx):
+                C[v, :, x, :] = zoom(B[v, :, x, :], (1 / np.sqrt(2), 1), order=0)  # squash the z axis pixel size by sqrt(2)
+        mv, mz, mx, my = C.shape
+
+        newy = my + mz  # because we will be shifting each x-y plane in the y direction by one pixel, the resulting size will be my plus the number of x-y planes (mz)
+        D = np.zeros((mv, mz, mx, newy), dtype=A.dtype)
+        shifted = 0
         for z in np.arange(mz):
-            minus_z=mz-z
-            shifted=minus_z
-            C[:,z,:,shifted:shifted+my]=B[:,z,:,:]
-        C=C[:,::-1,:,:]
-        # shift aspect ratio
-        #C=resize(C,(mt,mx,newy*shift_factor))   #This doesn't look like it works, it runs into memory problems
+            minus_z = mz - z
+            shifted = minus_z
+            D[:, z, :, shifted:shifted + my] = C[:, z, :, :]
+        D = D[:, ::-1, :, :]  # (mv, mz, mx, my)
 
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
-        w = Window(np.squeeze(C[:,0,:,:]), name=self.oldname)
-        w.volume=C
+        w = Window(np.squeeze(D[:,0,:,:]), name=self.oldname)
+        w.volume=D
 
         Volume_Viewer(w)
         return 
