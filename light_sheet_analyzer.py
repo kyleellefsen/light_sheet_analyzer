@@ -104,11 +104,17 @@ light_sheet_analyzer = Light_Sheet_Analyzer()
 
 class Volume_Viewer(QWidget):
     closeSignal=Signal()
+
+    def show_wo_focus(self):
+        self.show()
+        self.window.activateWindow()  # for Windows
+        self.window.raise_()  # for MacOS
+
     def __init__(self,window=None,parent=None):
         super(Volume_Viewer,self).__init__(parent) ## Create window with ImageView widget
         g.m.volume_viewer=self
         window.lostFocusSignal.connect(self.hide)
-        window.gainedFocusSignal.connect(self.show)
+        window.gainedFocusSignal.connect(self.show_wo_focus)
         self.window=window
         self.setWindowTitle('Light Sheet Volume View Controller')
         self.setWindowIcon(QIcon('images/favicon.png'))
@@ -164,7 +170,9 @@ class Volume_Viewer(QWidget):
         self.current_v_Index=self.window.currentIndex
         vol=self.window.volume
         testimage=np.squeeze(vol[self.current_v_Index,z_val,:,:])
+        viewRect = self.window.imageview.view.targetRect()
         self.window.imageview.setImage(testimage,autoLevels=False)
+        self.window.imageview.view.setRange(viewRect, padding = 0)
         self.window.image = testimage
         
     def zSlider_release_event(self,ev):
@@ -178,10 +186,14 @@ class Volume_Viewer(QWidget):
         elif self.currentAxisOrder[1]==3: # 'y'
             self.current_y_Index=self.zSlider.value()
             image=np.squeeze(vol[:,self.current_y_Index,:,:])
-            
+
+        viewRect = self.window.imageview.view.viewRect()
         self.window.imageview.setImage(image,autoLevels=False)
+        self.window.imageview.view.setRange(viewRect, padding=0)
         self.window.image = image
         self.window.imageview.setCurrentIndex(self.current_v_Index)
+        self.window.activateWindow()  # for Windows
+        self.window.raise_()  # for MacOS
         QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
     
     def sideViewOnClicked(self, checked):
@@ -193,11 +205,8 @@ class Volume_Viewer(QWidget):
             if side=='X':
                 vol=vol.swapaxes(1,2)
                 self.currentAxisOrder=[0,2,1,3]
-                
                 vol=vol.swapaxes(2,3)
                 self.currentAxisOrder=[0,2,3,1]
-                
-                
             elif side=='Y':
                 vol=vol.swapaxes(1,3)
                 self.currentAxisOrder=[0,3,2,1]
@@ -209,8 +218,6 @@ class Volume_Viewer(QWidget):
                 vol=vol.swapaxes(2,3)
                 vol=vol.swapaxes(1,2)
                 self.currentAxisOrder=[0,1,2,3]
-                
-                
         if self.currentAxisOrder[1]==1: # 'z'
             idx=self.current_z_Index
             self.xzy_position_label.setText('Z position')
@@ -223,12 +230,12 @@ class Volume_Viewer(QWidget):
             idx=self.current_y_Index
             self.xzy_position_label.setText('Y position')
             self.zSlider.setRange(0,self.vol_shape[3]-1)
-            
         image=np.squeeze(vol[:,idx,:,:])
         self.window.imageview.setImage(image,autoLevels=False)
         self.window.volume=vol
         self.window.imageview.setCurrentIndex(self.current_v_Index)
         self.zSlider.setValue(idx)
+
     def make_maxintensity(self):
         vol=self.window.volume
         new_vol=np.max(vol,1)
