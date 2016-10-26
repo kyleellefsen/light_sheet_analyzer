@@ -6,6 +6,7 @@ Created on Thu Feb 11 15:04:31 2016
 """
 
 import os
+from os.path import expanduser
 import numpy as np
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
@@ -249,7 +250,8 @@ class Volume_Viewer(QWidget):
         
     def export_volume(self):
         vol=self.window.volume
-        export_path='C:/Users/Admin/Desktop/light_sheet_vols'
+        export_path = QFileDialog.getExistingDirectory(g.m, "Select a parent folder to save into.", expanduser("~"), QFileDialog.ShowDirsOnly)
+        export_path = os.path.join(export_path, 'light_sheet_vols')
         i=0
         while os.path.isdir(export_path+str(i)):
             i+=1
