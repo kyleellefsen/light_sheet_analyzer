@@ -15,10 +15,11 @@ import global_vars as g
 from process.BaseProcess import BaseProcess, SliderLabel, CheckBox
 import pyqtgraph as pg
 from window import Window
-#from skimage.transform import resize
 from scipy.ndimage.interpolation import zoom
 import tifffile
 
+
+#from skimage.transform import resize
 #from spimagine import volshow
 
 
@@ -28,15 +29,17 @@ class Light_Sheet_Analyzer(BaseProcess):
     def __init__(self):
         if g.settings['light_sheet_analyzer'] is None:
             s = dict()
-            s['nSteps']=1
-            s['shift_factor']=1
+            s['nSteps'] = 1
+            s['shift_factor'] = 1
+            s['triangle_scan'] = False
             g.settings['light_sheet_analyzer']=s
         super().__init__()
 
 
-    def __call__(self, nSteps, shift_factor, keepSourceWindow=False):
+    def __call__(self, nSteps, shift_factor, triangle_scan, keepSourceWindow=False):
         g.settings['light_sheet_analyzer']['nSteps']=nSteps
         g.settings['light_sheet_analyzer']['shift_factor']=shift_factor
+        g.settings['light_sheet_analyzer']['triangle_scan'] = triangle_scan
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
@@ -49,7 +52,12 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         '''
         mt, mx, my = A.shape
-        mv = int(np.floor(mt / nSteps))  # number of volumes
+        for i in np.arange(mt // (nSteps * 2)):
+            t0 = i * nSteps * 2 + nSteps
+            tf = (i + 1) * nSteps * 2
+            A[t0:tf] = A[tf:t0:-1]
+
+        mv = mt // nSteps  # number of volumes
         A = A[:mv * nSteps]
         B = np.reshape(A, (mv, nSteps, mx, my))
         B = B.swapaxes(1, 3)  # the direction we step is going to be the new y axis, whereas the old y axis will eventually become the z axis
@@ -94,10 +102,14 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         self.shift_factor = pg.SpinBox(int=False, step=.1)
         self.shift_factor.setValue(s['shift_factor'])
-        self.shift_factor
+
+        self.triangle_scan = CheckBox()
+        self.triangle_scan.setValue(s['triangle_scan'])
+
         
         self.items.append({'name': 'nSteps', 'string': 'Number of steps per volume', 'object': self.nSteps})
         self.items.append({'name': 'shift_factor', 'string': 'Shift Factor', 'object': self.shift_factor})
+        self.items.append({'name': 'triangle_scan', 'string': 'Trangle Scan', 'object': self.triangle_scan})
         super().gui()
         
 light_sheet_analyzer = Light_Sheet_Analyzer()
