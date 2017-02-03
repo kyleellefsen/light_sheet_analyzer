@@ -43,7 +43,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
-        A = self.tif
+        A = np.copy(self.tif)
         # A = A[1:]  # Ian Parker said to hard code removal of the first frame.
         '''
         A=g.m.currentWindow.image
@@ -52,10 +52,11 @@ class Light_Sheet_Analyzer(BaseProcess):
         
         '''
         mt, mx, my = A.shape
-        for i in np.arange(mt // (nSteps * 2)):
-            t0 = i * nSteps * 2 + nSteps
-            tf = (i + 1) * nSteps * 2
-            A[t0:tf] = A[tf:t0:-1]
+        if triangle_scan:
+            for i in np.arange(mt // (nSteps * 2)):
+                t0 = i * nSteps * 2 + nSteps
+                tf = (i + 1) * nSteps * 2
+                A[t0:tf] = A[tf:t0:-1]
 
         mv = mt // nSteps  # number of volumes
         A = A[:mv * nSteps]
