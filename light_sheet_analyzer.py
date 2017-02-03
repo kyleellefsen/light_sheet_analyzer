@@ -26,6 +26,15 @@ import tifffile
 
 
 class Light_Sheet_Analyzer(BaseProcess):
+    """ light_Sheet_Analyzer(nSteps, shift_factor, keepSourceWindow=False)
+    Makes a 3D viewer for data acquired using a light sheet microscope.
+
+    Parameters:
+        | nSteps (int) -- How many stacks per volume
+        | shift_factor (int)
+    Returns:
+        Volume_Viewer
+    """
     def __init__(self):
         if g.settings['light_sheet_analyzer'] is None:
             s = dict()
