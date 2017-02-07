@@ -16,5 +16,6 @@
 	</description>
 	<menu_layout>
 		<action location="light_sheet_analyzer" function="light_sheet_analyzer.gui">Light Sheet Analyzer Dialog</action>
+		<action location="light_sheet_analyzer" function="ratio_by_baseline.gui">Ratio by Baseline</action>
 	</menu_layout>
 </plugin>

@@ -8,11 +8,10 @@ Created on Thu Feb 11 15:04:31 2016
 import os
 from os.path import expanduser
 import numpy as np
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from qtpy import QtGui, QtWidgets, QtCore
 from time import time
 import global_vars as g
-from process.BaseProcess import BaseProcess, SliderLabel, CheckBox
+from process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
 import pyqtgraph as pg
 from window import Window
 from scipy.ndimage.interpolation import zoom
@@ -125,8 +124,68 @@ class Light_Sheet_Analyzer(BaseProcess):
 light_sheet_analyzer = Light_Sheet_Analyzer()
 
 
-class Volume_Viewer(QWidget):
-    closeSignal=Signal()
+class Ratio_by_baseline(BaseProcess):
+    """ ratio_by_baseline(nSteps, first_volume, nVolumes, ratio_type, keepSourceWindow=False)
+
+    Parameters:
+        | nSteps (int) -- Number of steps per volume
+        | first_volume (int) -- The first volume to be used in the baseline.
+        | nVolumes (int) -- The number of volume to be combined in the baseline.
+        | ratio_type (str) -- The method used to combine the frames in the baseline.  Either 'standard deviation' or 'average'.
+    Returns:
+        newWindow
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def gui(self):
+        self.gui_reset()
+        nSteps         = pg.SpinBox(int=True, step=1)
+        first_volume   = pg.SpinBox(int=True, step=1)
+        nVolumes       = pg.SpinBox(int=True, step=1)
+        nVolumes.setMinimum(1)
+        ratio_type = ComboBox()
+        ratio_type.addItem('average')
+        ratio_type.addItem('standard deviation')
+        self.items.append({'name': 'nSteps',       'string': 'Number of steps per volume', 'object': nSteps      })
+        self.items.append({'name': 'first_volume', 'string': 'First Volume',               'object': first_volume})
+        self.items.append({'name': 'nVolumes',     'string': 'Number of Volumes',           'object': nVolumes    })
+        self.items.append({'name': 'ratio_type',   'string': 'Ratio Type',                 'object': ratio_type  })
+        super().gui()
+
+    def get_init_settings_dict(self):
+        s = dict()
+        s['nSteps'] = 1
+        s['first_volume'] = 0
+        s['nVolumes'] = 1
+        s['ratio_type'] = 'average'
+        return s
+
+    def __call__(self, nSteps, first_volume, nVolumes, ratio_type, keepSourceWindow=False):
+        self.start(keepSourceWindow)
+        A = np.copy(self.tif).astype(np.float)
+        mt, mx, my = A.shape
+        mv = mt // nSteps  # number of volumes
+        for i in range(nSteps):
+            baseline = A[i+first_volume*nSteps:nVolumes*nSteps:nSteps]
+            if ratio_type == 'average':
+                baseline = np.average(baseline,0)
+            elif ratio_type == 'standard deviation':
+                baseline = np.std(baseline,0)
+            else:
+                g.alert("'{}' is an unknown ratio_type.  Try 'average' or 'standard deviation'".format(ratio_type))
+                return None
+            A[i::nSteps] = A[i::nSteps] / baseline
+        self.newtif = A
+        self.newname = self.oldname + ' - Ratioed by ' + str(ratio_type)
+        return self.end()
+
+
+ratio_by_baseline = Ratio_by_baseline()
+
+class Volume_Viewer(QtWidgets.QWidget):
+    closeSignal=QtCore.Signal()
 
     def show_wo_focus(self):
         self.show()
@@ -140,9 +199,9 @@ class Volume_Viewer(QWidget):
         window.gainedFocusSignal.connect(self.show_wo_focus)
         self.window=window
         self.setWindowTitle('Light Sheet Volume View Controller')
-        self.setWindowIcon(QIcon('images/favicon.png'))
-        self.setGeometry(QRect(422, 35, 222, 86))
-        self.layout = QVBoxLayout()
+        self.setWindowIcon(QtGui.QIcon('images/favicon.png'))
+        self.setGeometry(QtCore.QRect(422, 35, 222, 86))
+        self.layout = QtWidgets.QVBoxLayout()
         self.vol_shape=window.volume.shape
         mv,mz,mx,my=window.volume.shape
         self.currentAxisOrder=[0,1,2,3]
@@ -150,11 +209,9 @@ class Volume_Viewer(QWidget):
         self.current_z_Index=0
         self.current_x_Index=0
         self.current_y_Index=0
-        
-        self.formlayout=QFormLayout()
-        self.formlayout.setLabelAlignment(Qt.AlignRight)
-        
-        self.xzy_position_label=QLabel('Z position')
+        self.formlayout=QtWidgets.QFormLayout()
+        self.formlayout.setLabelAlignment(QtCore.Qt.AlignRight)
+        self.xzy_position_label = QtWidgets.QLabel('Z position')
         self.zSlider=SliderLabel(0)
         self.zSlider.setRange(0,mz-1)
         self.zSlider.label.valueChanged.connect(self.zSlider_updated)
@@ -164,14 +221,14 @@ class Volume_Viewer(QWidget):
         self.sideViewOn.setChecked(False)
         self.sideViewOn.stateChanged.connect(self.sideViewOnClicked)
         
-        self.sideViewSide = QComboBox(self)
+        self.sideViewSide = QtWidgets.QComboBox(self)
         self.sideViewSide.addItem("X")
         self.sideViewSide.addItem("Y")
         
-        self.MaxProjButton = QPushButton('Max Intenstiy Projection')
+        self.MaxProjButton = QtWidgets.QPushButton('Max Intenstiy Projection')
         self.MaxProjButton.pressed.connect(self.make_maxintensity)
         
-        self.exportVolButton = QPushButton('Export Volume')
+        self.exportVolButton = QtWidgets.QPushButton('Export Volume')
         self.exportVolButton.pressed.connect(self.export_volume)
         
         self.formlayout.addRow(self.xzy_position_label,self.zSlider)
@@ -183,7 +240,7 @@ class Volume_Viewer(QWidget):
         self.layout.addWidget(self.zSlider)
         self.layout.addLayout(self.formlayout)
         self.setLayout(self.layout)
-        self.setGeometry(QRect(381, 43, 416, 110))
+        self.setGeometry(QtWidgets.QRect(381, 43, 416, 110))
         self.show()
 
     def closeEvent(self, event):
@@ -217,7 +274,7 @@ class Volume_Viewer(QWidget):
         self.window.imageview.setCurrentIndex(self.current_v_Index)
         self.window.activateWindow()  # for Windows
         self.window.raise_()  # for MacOS
-        QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
+        QtWidgets.QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
     
     def sideViewOnClicked(self, checked):
         self.current_v_Index=self.window.currentIndex
@@ -272,7 +329,7 @@ class Volume_Viewer(QWidget):
         
     def export_volume(self):
         vol=self.window.volume
-        export_path = QFileDialog.getExistingDirectory(g.m, "Select a parent folder to save into.", expanduser("~"), QFileDialog.ShowDirsOnly)
+        export_path = QtWidgets.QFileDialog.getExistingDirectory(g.m, "Select a parent folder to save into.", expanduser("~"), QtWidgets.QFileDialog.ShowDirsOnly)
         export_path = os.path.join(export_path, 'light_sheet_vols')
         i=0
         while os.path.isdir(export_path+str(i)):
