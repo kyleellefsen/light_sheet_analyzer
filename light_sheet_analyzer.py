@@ -240,7 +240,7 @@ class Volume_Viewer(QtWidgets.QWidget):
         self.layout.addWidget(self.zSlider)
         self.layout.addLayout(self.formlayout)
         self.setLayout(self.layout)
-        self.setGeometry(QtWidgets.QRect(381, 43, 416, 110))
+        self.setGeometry(QtCore.QRect(381, 43, 416, 110))
         self.show()
 
     def closeEvent(self, event):
