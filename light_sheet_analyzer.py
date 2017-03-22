@@ -8,14 +8,28 @@ Created on Thu Feb 11 15:04:31 2016
 import os
 from os.path import expanduser
 import numpy as np
+from scipy.ndimage.interpolation import zoom
 from qtpy import QtGui, QtWidgets, QtCore
 from time import time
-import global_vars as g
-from process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
+from distutils.version import StrictVersion
 import pyqtgraph as pg
-from window import Window
-from scipy.ndimage.interpolation import zoom
 import tifffile
+
+import flika
+try:
+    flika_version = flika.__version__
+except AttributeError:
+    flika_version = '0.0.0'
+if StrictVersion(flika_version) < StrictVersion('0.1.0'):
+    import global_vars as g
+    from process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
+    from window import Window
+else:
+    from flika import global_vars as g
+    from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
+    from flika.window import Window
+
+
 
 
 #from skimage.transform import resize
