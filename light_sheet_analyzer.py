@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 11 15:04:31 2016
-
-@author: kyle
-"""
-
 import os
 from os.path import expanduser
 import numpy as np
@@ -13,21 +7,10 @@ from qtpy import QtGui, QtWidgets, QtCore
 from time import time
 from distutils.version import StrictVersion
 import pyqtgraph as pg
-import tifffile
-
-import flika
-try:
-    flika_version = flika.__version__
-except AttributeError:
-    flika_version = '0.0.0'
-if StrictVersion(flika_version) < StrictVersion('0.1.0'):
-    import global_vars as g
-    from process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
-    from window import Window
-else:
-    from flika import global_vars as g
-    from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
-    from flika.window import Window
+from flika import global_vars as g
+from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
+from flika.window import Window
+from flika.utils.io import tifffile
 
 
 
