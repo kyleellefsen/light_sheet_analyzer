@@ -2,94 +2,157 @@
 import os
 from os.path import expanduser
 import numpy as np
+from numpy import moveaxis
 from scipy.ndimage.interpolation import zoom
 from qtpy import QtGui, QtWidgets, QtCore
 from time import time
-from distutils.version import StrictVersion
 import pyqtgraph as pg
 from flika import global_vars as g
 from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
 from flika.window import Window
 from flika.utils.io import tifffile
+from flika.images import image_path
+from skimage.transform import rescale
 
-
-
-
-#from skimage.transform import resize
 #from spimagine import volshow
 
 
+def get_transformation_matrix(hx=0):
+    """
+    hx is the horizontal shear factor
+    sy is the vertical scaling factor
+    Look at the pdf in this folder.
+    """
+    hx = -hx
+    sy = 1/np.sqrt(2)
+    S = np.array([[1, hx, 0],
+                  [0, sy, 0],
+                  [0, 0, 1]])
+    #S_inv = np.linalg.inv(S)
+    #old_coords = np.array([[2, 2, 1], [6, 6, 1]]).T
+    #new_coords = np.matmul(S, old_coords)
+    #recovered_coords = np.matmul(S_inv, new_coords)
+    #print('new coords: ', new_coords)
+    #print('recovered coords: ', recovered_coords)
+    return S
+
+
+def get_transformation_coordinates(I, hx):
+    negative_new_max = False
+    S = get_transformation_matrix(hx)
+    S_inv = np.linalg.inv(S)
+    mx, my = I.shape
+
+    four_corners = np.matmul(S, np.array([[0, 0, mx, mx],
+                                          [0, my, 0, my],
+                                          [1, 1, 1, 1]]))[:-1,:]
+    range_x = np.round(np.array([np.min(four_corners[0]), np.max(four_corners[0])])).astype(np.int)
+    range_y = np.round(np.array([np.min(four_corners[1]), np.max(four_corners[1])])).astype(np.int)
+    all_new_coords = np.meshgrid(np.arange(range_x[0], range_x[1]), np.arange(range_y[0], range_y[1]))
+    new_coords = [all_new_coords[0].flatten(), all_new_coords[1].flatten()]
+    new_homog_coords = np.stack([new_coords[0], new_coords[1], np.ones(len(new_coords[0]))])
+    old_coords = np.matmul(S_inv, new_homog_coords)
+    old_coords = old_coords[:-1, :]
+    old_coords = old_coords
+    old_coords[0, old_coords[0, :] >= mx-1] = -1
+    old_coords[1, old_coords[1, :] >= my-1] = -1
+    old_coords[0, old_coords[0, :] < 1] = -1
+    old_coords[1, old_coords[1, :] < 1] = -1
+    new_coords[0] -= np.min(new_coords[0])
+    keep_coords = np.logical_not(np.logical_or(old_coords[0] == -1, old_coords[1] == -1))
+    new_coords = [new_coords[0][keep_coords], new_coords[1][keep_coords]]
+    old_coords = [old_coords[0][keep_coords], old_coords[1][keep_coords]]
+    return old_coords, new_coords
+
+
+def setup_test():
+    A = g.win.image
+    mt, mx, my = A.shape
+    nSteps = 128
+    shift_factor = 2
+    mv = mt // nSteps  # number of volumes
+    A = A[:mv * nSteps]
+    B = np.reshape(A, (mv, nSteps, mx, my))
+
+def perform_shear_transform(A, shift_factor, interpolate, datatype):
+    A = moveaxis(A, [1, 3, 2, 0], [0, 1, 2, 3])
+    m1, m2, m3, m4 = A.shape
+    if interpolate:
+        A_rescaled = np.zeros((m1*int(shift_factor), m2, m3, m4))
+        for v in np.arange(m4):
+            print('Upsampling Volume #{}/{}'.format(v+1, m4))
+            A_rescaled[:, :, :, v] = rescale(A[:, :, :, v], (2., 1.), mode='constant', preserve_range=True)
+    else:
+        A_rescaled = np.repeat(A, shift_factor, axis=0)
+    mx, my, mz, mt = A_rescaled.shape
+    I = A_rescaled[:, :, 0, 0]
+    old_coords, new_coords = get_transformation_coordinates(I, hx=1)
+    old_coords = np.round(old_coords).astype(np.int)
+    new_mx, new_my = np.max(new_coords[0]) + 1, np.max(new_coords[1]) + 1
+    # I_transformed = np.zeros((new_mx, new_my))
+    # I_transformed[new_coords[0], new_coords[1]] = I[old_coords[0], old_coords[1]]
+    # Window(I_transformed)
+    D = np.zeros((new_mx, new_my, mz, mt))
+    D[new_coords[0], new_coords[1], :, :] = A_rescaled[old_coords[0], old_coords[1], :, :]
+    E = moveaxis(D, [0, 1, 2, 3], [3, 1, 2, 0])
+    E = np.flip(E, 1)
+    #Window(E[0, :, :, :])
+    E = E.astype(datatype)
+    return E
 
 
 class Light_Sheet_Analyzer(BaseProcess):
-    """ light_Sheet_Analyzer(nSteps, shift_factor, keepSourceWindow=False)
+    """ light_Sheet_Analyzer(nSteps, shift_factor, triangle_scan, interpolate, trim_last_frame, keepSourceWindow=False)
     Makes a 3D viewer for data acquired using a light sheet microscope.
 
     Parameters:
         | nSteps (int) -- How many stacks per volume
-        | shift_factor (int)
+        | shift_factor (int) -- How many pixels (measured along the width of the light sheet) the sample moves per frame
+        | triangle_scan (bool) -- If the scan moves back and forth this is true. If the scan moves like a typewriter, this is false.
+        | interpolate (bool) -- This will upsample the data before the transformation to prevent information loss, but is slow
+        | trim_last_frame (bool) -- This removes the last frame of each volume.
     Returns:
         Volume_Viewer
     """
     def __init__(self):
-        if g.settings['light_sheet_analyzer'] is None:
+        if g.settings['light_sheet_analyzer'] is None or 'trim_last_frame' not in g.settings['light_sheet_analyzer']:
             s = dict()
             s['nSteps'] = 1
             s['shift_factor'] = 1
             s['triangle_scan'] = False
-            g.settings['light_sheet_analyzer']=s
+            s['interpolate'] = False
+            s['trim_last_frame'] = False
+            g.settings['light_sheet_analyzer'] = s
         super().__init__()
 
 
-    def __call__(self, nSteps, shift_factor, triangle_scan, keepSourceWindow=False):
+    def __call__(self, nSteps, shift_factor, triangle_scan, interpolate, trim_last_frame, keepSourceWindow=False):
         g.settings['light_sheet_analyzer']['nSteps']=nSteps
         g.settings['light_sheet_analyzer']['shift_factor']=shift_factor
         g.settings['light_sheet_analyzer']['triangle_scan'] = triangle_scan
+        g.settings['light_sheet_analyzer']['interpolate'] = interpolate
+        g.settings['light_sheet_analyzer']['trim_last_frame'] = trim_last_frame
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
         A = np.copy(self.tif)
         # A = A[1:]  # Ian Parker said to hard code removal of the first frame.
-        '''
-        A=g.m.currentWindow.image
-        nSteps=250
-        shift_factor=1
-        
-        '''
         mt, mx, my = A.shape
         if triangle_scan:
             for i in np.arange(mt // (nSteps * 2)):
                 t0 = i * nSteps * 2 + nSteps
                 tf = (i + 1) * nSteps * 2
                 A[t0:tf] = A[tf:t0:-1]
-
         mv = mt // nSteps  # number of volumes
         A = A[:mv * nSteps]
         B = np.reshape(A, (mv, nSteps, mx, my))
-        B = B.swapaxes(1, 3)  # the direction we step is going to be the new y axis, whereas the old y axis will eventually become the z axis
-        B = np.repeat(B, shift_factor, axis=3)  # We need to stretch the y axis pixels (which were the step size) so that one new y pixel is the same as a pixel in the x direction. Hopefully before this transformation, the step size (ums) is an integer multiple of the x pixel size (um).
-        # Now our matrix is in terms of (mv, mz, mx, my).
-        mv, mz, mx, my = B.shape
-
-        mz_new, _ = zoom(B[0, :, 0, :], (1 / np.sqrt(2), 1)).shape
-        C = np.zeros((mv, mz_new, mx, my), dtype=B.dtype)
-        for v in np.arange(mv):
-            for x in np.arange(mx):
-                C[v, :, x, :] = zoom(B[v, :, x, :], (1 / np.sqrt(2), 1), order=0)  # squash the z axis pixel size by sqrt(2)
-        mv, mz, mx, my = C.shape
-
-        newy = my + mz  # because we will be shifting each x-y plane in the y direction by one pixel, the resulting size will be my plus the number of x-y planes (mz)
-        D = np.zeros((mv, mz, mx, newy), dtype=A.dtype)
-        shifted = 0
-        for z in np.arange(mz):
-            minus_z = mz - z
-            shifted = minus_z
-            D[:, z, :, shifted:shifted + my] = C[:, z, :, :]
-        D = D[:, ::-1, :, :]  # (mv, mz, mx, my)
-
+        if trim_last_frame:
+            B = B[:, :-1, :, :]
+        #D = perform_shear_transform_old(B, shift_factor, interpolate, A.dtype)
+        D = perform_shear_transform(B, shift_factor, interpolate, A.dtype)
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
-        w = Window(np.squeeze(D[:,0,:,:]), name=self.oldname)
-        w.volume=D
+        w = Window(np.squeeze(D[:, 0, :, :]), name=self.oldname)
+        w.volume = D
 
         Volume_Viewer(w)
         return 
@@ -112,10 +175,18 @@ class Light_Sheet_Analyzer(BaseProcess):
         self.triangle_scan = CheckBox()
         self.triangle_scan.setValue(s['triangle_scan'])
 
+        self.interpolate = CheckBox()
+        self.interpolate.setValue(s['interpolate'])
+
+        self.trim_last_frame = CheckBox()
+        self.trim_last_frame.setValue(s['trim_last_frame'])
+
         
         self.items.append({'name': 'nSteps', 'string': 'Number of steps per volume', 'object': self.nSteps})
         self.items.append({'name': 'shift_factor', 'string': 'Shift Factor', 'object': self.shift_factor})
         self.items.append({'name': 'triangle_scan', 'string': 'Trangle Scan', 'object': self.triangle_scan})
+        self.items.append({'name': 'interpolate', 'string': 'Interpolate', 'object': self.interpolate})
+        self.items.append({'name': 'trim_last_frame', 'string': 'Trim Last Frame', 'object': self.trim_last_frame})
         super().gui()
         
 light_sheet_analyzer = Light_Sheet_Analyzer()
@@ -190,13 +261,13 @@ class Volume_Viewer(QtWidgets.QWidget):
         self.window.raise_()  # for MacOS
 
     def __init__(self,window=None,parent=None):
-        super(Volume_Viewer,self).__init__(parent) ## Create window with ImageView widget
-        g.m.volume_viewer=self
+        super(Volume_Viewer,self).__init__(parent)  # Create window with ImageView widget
+        g.m.volume_viewer = self
         window.lostFocusSignal.connect(self.hide)
         window.gainedFocusSignal.connect(self.show_wo_focus)
         self.window=window
         self.setWindowTitle('Light Sheet Volume View Controller')
-        self.setWindowIcon(QtGui.QIcon('images/favicon.png'))
+        self.setWindowIcon(QtGui.QIcon(image_path('favicon.png')))
         self.setGeometry(QtCore.QRect(422, 35, 222, 86))
         self.layout = QtWidgets.QVBoxLayout()
         self.vol_shape=window.volume.shape
@@ -268,7 +339,8 @@ class Volume_Viewer(QtWidgets.QWidget):
         self.window.imageview.setImage(image,autoLevels=False)
         self.window.imageview.view.setRange(viewRect, padding=0)
         self.window.image = image
-        self.window.imageview.setCurrentIndex(self.current_v_Index)
+        if self.window.imageview.axes['t'] is not None:
+            self.window.imageview.setCurrentIndex(self.current_v_Index)
         self.window.activateWindow()  # for Windows
         self.window.raise_()  # for MacOS
         QtWidgets.QSlider.mouseReleaseEvent(self.zSlider.slider, ev)
@@ -344,5 +416,26 @@ class Volume_Viewer(QtWidgets.QWidget):
 
 #v=Volume_Viewer(g.m.currentWindow)
 
+def perform_shear_transform_old(B, shift_factor, interpolate, datatype):
+    B = B.swapaxes(1, 3)  # the direction we step is going to be the new y axis, whereas the old y axis will eventually become the z axis
+    B = np.repeat(B, shift_factor,
+                  axis=3)  # We need to stretch the y axis pixels (which were the step size) so that one new y pixel is the same as a pixel in the x direction. Hopefully before this transformation, the step size (ums) is an integer multiple of the x pixel size (um).
+    # Now our matrix is in terms of (mv, mz, mx, my).
+    mv, mz, mx, my = B.shape
 
-    
+    mz_new, _ = zoom(B[0, :, 0, :], (1 / np.sqrt(2), 1)).shape
+    C = np.zeros((mv, mz_new, mx, my), dtype=B.dtype)
+    for v in np.arange(mv):
+        for x in np.arange(mx):
+            C[v, :, x, :] = zoom(B[v, :, x, :], (1 / np.sqrt(2), 1), order=0)  # squash the z axis pixel size by sqrt(2)
+    mv, mz, mx, my = C.shape
+
+    newy = my + mz  # because we will be shifting each x-y plane in the y direction by one pixel, the resulting size will be my plus the number of x-y planes (mz)
+    D = np.zeros((mv, mz, mx, newy), dtype=datatype)
+    shifted = 0
+    for z in np.arange(mz):
+        minus_z = mz - z
+        shifted = minus_z
+        D[:, z, :, shifted:shifted + my] = C[:, z, :, :]
+    D = D[:, ::-1, :, :]  # (mv, mz, mx, my)
+    return D
