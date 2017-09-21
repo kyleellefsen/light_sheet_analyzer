@@ -6,13 +6,20 @@ from numpy import moveaxis
 from scipy.ndimage.interpolation import zoom
 from qtpy import QtGui, QtWidgets, QtCore
 from time import time
+from distutils.version import StrictVersion
 import pyqtgraph as pg
+import flika
 from flika import global_vars as g
-from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
 from flika.window import Window
 from flika.utils.io import tifffile
 from flika.images import image_path
 from skimage.transform import rescale
+
+flika_version = flika.__version__
+if StrictVersion(flika_version) < StrictVersion('0.2.23'):
+    from flika.process.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
+else:
+    from flika.utils.BaseProcess import BaseProcess, SliderLabel, CheckBox, ComboBox
 
 #from spimagine import volshow
 
