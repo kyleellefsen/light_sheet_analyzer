@@ -24,16 +24,17 @@ else:
 #from spimagine import volshow
 
 
-def get_transformation_matrix(hx=0):
+def get_transformation_matrix(theta=45):
     """
-    hx is the horizontal shear factor
-    sy is the vertical scaling factor
+    theta is the angle of the light sheet
     Look at the pdf in this folder.
     """
-    hx = -hx
-    sy = 1/np.sqrt(2)
+
+    theta = theta/360 * 2 * np.pi # in radians
+    hx = np.tan(theta)
+
     S = np.array([[1, hx, 0],
-                  [0, sy, 0],
+                  [0, 1, 0],
                   [0, 0, 1]])
     #S_inv = np.linalg.inv(S)
     #old_coords = np.array([[2, 2, 1], [6, 6, 1]]).T
@@ -44,9 +45,9 @@ def get_transformation_matrix(hx=0):
     return S
 
 
-def get_transformation_coordinates(I, hx):
+def get_transformation_coordinates(I, theta):
     negative_new_max = False
-    S = get_transformation_matrix(hx)
+    S = get_transformation_matrix(theta)
     S_inv = np.linalg.inv(S)
     mx, my = I.shape
 
@@ -81,7 +82,7 @@ def setup_test():
     A = A[:mv * nSteps]
     B = np.reshape(A, (mv, nSteps, mx, my))
 
-def perform_shear_transform(A, shift_factor, interpolate, datatype):
+def perform_shear_transform(A, shift_factor, interpolate, datatype, theta):
     A = moveaxis(A, [1, 3, 2, 0], [0, 1, 2, 3])
     m1, m2, m3, m4 = A.shape
     if interpolate:
@@ -93,7 +94,7 @@ def perform_shear_transform(A, shift_factor, interpolate, datatype):
         A_rescaled = np.repeat(A, shift_factor, axis=0)
     mx, my, mz, mt = A_rescaled.shape
     I = A_rescaled[:, :, 0, 0]
-    old_coords, new_coords = get_transformation_coordinates(I, hx=1)
+    old_coords, new_coords = get_transformation_coordinates(I, theta)
     old_coords = np.round(old_coords).astype(np.int)
     new_mx, new_my = np.max(new_coords[0]) + 1, np.max(new_coords[1]) + 1
     # I_transformed = np.zeros((new_mx, new_my))
@@ -109,23 +110,26 @@ def perform_shear_transform(A, shift_factor, interpolate, datatype):
 
 
 class Light_Sheet_Analyzer(BaseProcess):
-    """ light_Sheet_Analyzer(nSteps, shift_factor, triangle_scan, interpolate, trim_last_frame, keepSourceWindow=False)
+    """ light_Sheet_Analyzer(nSteps, shift_factor, theta, triangle_scan, interpolate, trim_last_frame, zscan, keepSourceWindow=False)
     Makes a 3D viewer for data acquired using a light sheet microscope.
 
     Parameters:
         | nSteps (int) -- How many stacks per volume
         | shift_factor (int) -- How many pixels (measured along the width of the light sheet) the sample moves per frame
+        | theta (int) -- The angle of the light sheet in degrees (between 0 and 90)
         | triangle_scan (bool) -- If the scan moves back and forth this is true. If the scan moves like a typewriter, this is false.
         | interpolate (bool) -- This will upsample the data before the transformation to prevent information loss, but is slow
         | trim_last_frame (bool) -- This removes the last frame of each volume.
+        | zscan (bool) -- True if the light sheet is moving in the z dimention relative to the specimen. See included figure.
     Returns:
         Volume_Viewer
     """
     def __init__(self):
-        if g.settings['light_sheet_analyzer'] is None or 'trim_last_frame' not in g.settings['light_sheet_analyzer']:
+        if g.settings['light_sheet_analyzer'] is None or 'theta' not in g.settings['light_sheet_analyzer']:
             s = dict()
             s['nSteps'] = 1
             s['shift_factor'] = 1
+            s['theta'] = 45
             s['triangle_scan'] = False
             s['interpolate'] = False
             s['trim_last_frame'] = False
@@ -133,17 +137,20 @@ class Light_Sheet_Analyzer(BaseProcess):
         super().__init__()
 
 
-    def __call__(self, nSteps, shift_factor, triangle_scan, interpolate, trim_last_frame, keepSourceWindow=False):
+    def __call__(self, nSteps, shift_factor, theta, triangle_scan, interpolate, trim_last_frame, zscan, keepSourceWindow=False):
         g.settings['light_sheet_analyzer']['nSteps']=nSteps
         g.settings['light_sheet_analyzer']['shift_factor']=shift_factor
+        g.settings['light_sheet_analyzer']['theta']=theta
         g.settings['light_sheet_analyzer']['triangle_scan'] = triangle_scan
         g.settings['light_sheet_analyzer']['interpolate'] = interpolate
         g.settings['light_sheet_analyzer']['trim_last_frame'] = trim_last_frame
+        g.settings['light_sheet_analyzer']['zscan'] = zscan
         g.m.statusBar().showMessage("Generating 4D movie ...")
         t = time()
         self.start(keepSourceWindow)
         A = np.copy(self.tif)
-        # A = A[1:]  # Ian Parker said to hard code removal of the first frame.
+        if zscan:
+            A = A.swapaxes(1,2)
         mt, mx, my = A.shape
         if triangle_scan:
             for i in np.arange(mt // (nSteps * 2)):
@@ -156,7 +163,7 @@ class Light_Sheet_Analyzer(BaseProcess):
         if trim_last_frame:
             B = B[:, :-1, :, :]
         #D = perform_shear_transform_old(B, shift_factor, interpolate, A.dtype)
-        D = perform_shear_transform(B, shift_factor, interpolate, A.dtype)
+        D = perform_shear_transform(B, shift_factor, interpolate, A.dtype, theta)
         g.m.statusBar().showMessage("Successfully generated movie ({} s)".format(time() - t))
         w = Window(np.squeeze(D[:, 0, :, :]), name=self.oldname)
         w.volume = D
@@ -179,6 +186,9 @@ class Light_Sheet_Analyzer(BaseProcess):
         self.shift_factor = pg.SpinBox(int=False, step=.1)
         self.shift_factor.setValue(s['shift_factor'])
 
+        self.theta = pg.SpinBox(int=True, step=1)
+        self.theta.setValue(s['theta'])
+
         self.triangle_scan = CheckBox()
         self.triangle_scan.setValue(s['triangle_scan'])
 
@@ -188,12 +198,17 @@ class Light_Sheet_Analyzer(BaseProcess):
         self.trim_last_frame = CheckBox()
         self.trim_last_frame.setValue(s['trim_last_frame'])
 
+        self.zscan = CheckBox()
+        self.zscan.setValue(s['trim_last_frame'])
+
         
         self.items.append({'name': 'nSteps', 'string': 'Number of steps per volume', 'object': self.nSteps})
         self.items.append({'name': 'shift_factor', 'string': 'Shift Factor', 'object': self.shift_factor})
+        self.items.append({'name': 'theta', 'string': 'Theta', 'object': self.theta})
         self.items.append({'name': 'triangle_scan', 'string': 'Trangle Scan', 'object': self.triangle_scan})
         self.items.append({'name': 'interpolate', 'string': 'Interpolate', 'object': self.interpolate})
         self.items.append({'name': 'trim_last_frame', 'string': 'Trim Last Frame', 'object': self.trim_last_frame})
+        self.items.append({'name': 'zscan', 'string': 'Z scan', 'object': self.zscan})
         super().gui()
         
 light_sheet_analyzer = Light_Sheet_Analyzer()
@@ -422,27 +437,3 @@ class Volume_Viewer(QtWidgets.QWidget):
             tifffile.imsave(filename, A)
 
 #v=Volume_Viewer(g.m.currentWindow)
-
-def perform_shear_transform_old(B, shift_factor, interpolate, datatype):
-    B = B.swapaxes(1, 3)  # the direction we step is going to be the new y axis, whereas the old y axis will eventually become the z axis
-    B = np.repeat(B, shift_factor,
-                  axis=3)  # We need to stretch the y axis pixels (which were the step size) so that one new y pixel is the same as a pixel in the x direction. Hopefully before this transformation, the step size (ums) is an integer multiple of the x pixel size (um).
-    # Now our matrix is in terms of (mv, mz, mx, my).
-    mv, mz, mx, my = B.shape
-
-    mz_new, _ = zoom(B[0, :, 0, :], (1 / np.sqrt(2), 1)).shape
-    C = np.zeros((mv, mz_new, mx, my), dtype=B.dtype)
-    for v in np.arange(mv):
-        for x in np.arange(mx):
-            C[v, :, x, :] = zoom(B[v, :, x, :], (1 / np.sqrt(2), 1), order=0)  # squash the z axis pixel size by sqrt(2)
-    mv, mz, mx, my = C.shape
-
-    newy = my + mz  # because we will be shifting each x-y plane in the y direction by one pixel, the resulting size will be my plus the number of x-y planes (mz)
-    D = np.zeros((mv, mz, mx, newy), dtype=datatype)
-    shifted = 0
-    for z in np.arange(mz):
-        minus_z = mz - z
-        shifted = minus_z
-        D[:, z, :, shifted:shifted + my] = C[:, z, :, :]
-    D = D[:, ::-1, :, :]  # (mv, mz, mx, my)
-    return D
